@@ -1,24 +1,27 @@
 import json
 import boto3
 
-s3 = boto3.client("s3")
+dynamodb = boto3.resource('dynamodb')
 
-bucket_name = "akshay-video-upload-bucket-2026"
+table = dynamodb.Table('videos')
+
 
 def lambda_handler(event, context):
 
-    response = s3.list_objects_v2(Bucket=bucket_name)
-    videos = []
+    response = table.scan()
 
-    if "Contents" in response:
-        for item in response["Contents"]:
-            videos.append(item["Key"])
+    print("DYNAMODB RESPONSE:", response)
 
+    items = response.get('Items', [])
 
+    print("ITEMS:", items)
 
     return {
         "statusCode": 200,
+        "headers": {
+            "Access-Control-Allow-Origin": "*"
+        },
         "body": json.dumps({
-            "videos": videos
+            "videos": items
         })
     }

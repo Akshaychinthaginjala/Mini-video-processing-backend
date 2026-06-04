@@ -4,8 +4,12 @@ function App() {
 
   const [videos, setVideos] = useState([])
   const [selectedVideo, setSelectedVideo] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
 
+  // ============================================
   // FETCH VIDEOS
+  // ============================================
   const fetchVideos = async () => {
 
     try {
@@ -18,7 +22,6 @@ function App() {
 
       console.log("VIDEOS API:", data)
 
-      // HANDLE DIFFERENT API STRUCTURES
       if (Array.isArray(data)) {
 
         setVideos(data)
@@ -32,20 +35,24 @@ function App() {
         setVideos([])
       }
 
-    } catch (err) {
+    } catch (error) {
 
-      console.error("FETCH ERROR:", err)
+      console.log("FETCH ERROR:", error)
     }
   }
 
-  // LOAD VIDEOS ON PAGE START
+  // ============================================
+  // LOAD VIDEOS ON START
+  // ============================================
   useEffect(() => {
 
     fetchVideos()
 
   }, [])
 
+  // ============================================
   // HANDLE VIDEO UPLOAD
+  // ============================================
   const handleUpload = async (event) => {
 
     const file = event.target.files[0]
@@ -54,54 +61,131 @@ function App() {
 
     try {
 
+      setUploading(true)
+      setUploadProgress(0)
+
+      // ============================================
       // STEP 1 — GET PRESIGNED URL
-      const response = await fetch(
-        "https://l6ifipbuo8.execute-api.ap-south-1.amazonaws.com/dev/upload",
+      // ============================================
+      const presignedResponse = await fetch(
+
+        `http://localhost:5000/api/generate-upload-url?fileName=${encodeURIComponent(file.name)}&fileType=${encodeURIComponent(file.type)}`
+
+      )
+
+      if (!presignedResponse.ok) {
+
+        throw new Error("Failed to generate upload URL")
+      }
+
+      const presignedData = await presignedResponse.json()
+
+      console.log("PRESIGNED URL RESPONSE:", presignedData)
+
+      const { uploadUrl, key } = presignedData
+
+      // ============================================
+      // STEP 2 — UPLOAD VIDEO DIRECTLY TO S3
+      // ============================================
+      await new Promise((resolve, reject) => {
+
+        const xhr = new XMLHttpRequest()
+
+        xhr.open("PUT", uploadUrl)
+
+        xhr.setRequestHeader(
+          "Content-Type",
+          file.type
+        )
+
+        xhr.upload.onprogress = (event) => {
+
+          if (event.lengthComputable) {
+
+            const percent = Math.round(
+              (event.loaded / event.total) * 100
+            )
+
+            setUploadProgress(percent)
+          }
+        }
+
+        xhr.onload = () => {
+
+          if (xhr.status === 200) {
+
+            resolve()
+
+          } else {
+
+            reject(new Error("S3 upload failed"))
+          }
+        }
+
+        xhr.onerror = () => {
+
+          reject(new Error("S3 upload failed"))
+        }
+
+        xhr.send(file)
+      })
+
+      console.log("VIDEO UPLOADED TO S3 SUCCESSFULLY")
+
+      // ============================================
+      // STEP 3 — SAVE METADATA
+      // ============================================
+      const metadataResponse = await fetch(
+
+        "http://localhost:5000/api/save-video",
+
         {
-          method: "POST"
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+
+            video_name: file.name,
+
+            video_key: key,
+
+            video_size: file.size,
+
+            status: "UPLOADED",
+
+            uploaded_at: new Date().toISOString(),
+          }),
         }
       )
 
-      const data = await response.json()
+      if (!metadataResponse.ok) {
 
-      console.log("UPLOAD RESPONSE:", data)
-
-      const uploadUrl = data.upload_url
-
-      if (!uploadUrl) {
-
-        throw new Error("upload_url missing from API response")
+        throw new Error("Failed to save metadata")
       }
 
-      console.log("UPLOAD URL:", uploadUrl)
+      const metadataData = await metadataResponse.json()
 
-      // STEP 2 — UPLOAD VIDEO TO S3
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: {
-          "Content-Type": "video/mp4"
-        }
-      })
-
-      console.log("S3 RESPONSE:", uploadResponse)
-
-      // STEP 3 — VERIFY SUCCESS
-      if (!uploadResponse.ok) {
-
-        throw new Error("S3 Upload Failed")
-      }
+      console.log("METADATA SAVED:", metadataData)
 
       alert("Video uploaded successfully!")
 
-      // STEP 4 — REFRESH VIDEO LIST
+      // ============================================
+      // REFRESH VIDEOS
+      // ============================================
       fetchVideos()
 
-    } catch (err) {
+    } catch (error) {
 
-      console.error("FULL UPLOAD ERROR:", err)
+      console.log("UPLOAD ERROR:", error)
 
-      alert(err.message)
+      alert("Upload failed")
+
+    } finally {
+
+      setUploading(false)
     }
   }
 
@@ -124,7 +208,9 @@ function App() {
         }}
       >
 
+        {/* ========================================= */}
         {/* HEADER */}
+        {/* ========================================= */}
         <h1
           style={{
             fontSize: "42px",
@@ -140,10 +226,12 @@ function App() {
             marginBottom: "40px",
           }}
         >
-          Upload, manage, and stream videos using AWS serverless architecture.
+          Upload, process, and stream videos with secure cloud-native architecture.
         </p>
 
+        {/* ========================================= */}
         {/* UPLOAD SECTION */}
+        {/* ========================================= */}
         <div
           style={{
             backgroundColor: "#1e293b",
@@ -155,19 +243,77 @@ function App() {
 
           <h2>Upload Video</h2>
 
-          <input
-            type="file"
-            accept="video/*"
-            onChange={handleUpload}
+          <label
             style={{
+              display: "inline-block",
+              backgroundColor: "#38bdf8",
+              color: "#0f172a",
+              padding: "12px 24px",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontWeight: "bold",
               marginTop: "20px",
-              color: "white",
             }}
-          />
+          >
+            📹 Select Video
+
+            <input
+              type="file"
+              accept="video/*"
+              onChange={handleUpload}
+              style={{
+                display: "none",
+              }}
+            />
+          </label>
+
+          {uploading && (
+
+            <div
+              style={{
+                marginTop: "20px",
+              }}
+            >
+
+              <p
+                style={{
+                  color: "#38bdf8",
+                  marginBottom: "10px",
+                }}
+              >
+                Uploading... {uploadProgress}%
+              </p>
+
+              <div
+                style={{
+                  width: "100%",
+                  height: "12px",
+                  backgroundColor: "#334155",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                }}
+              >
+
+                <div
+                  style={{
+                    width: `${uploadProgress}%`,
+                    height: "100%",
+                    backgroundColor: "#38bdf8",
+                    transition: "width 0.2s ease",
+                  }}
+                />
+
+              </div>
+
+            </div>
+
+          )}
 
         </div>
 
-        {/* VIDEO LIST SECTION */}
+        {/* ========================================= */}
+        {/* VIDEO LIST */}
+        {/* ========================================= */}
         <div
           style={{
             backgroundColor: "#1e293b",
@@ -202,7 +348,11 @@ function App() {
 
               {videos.map((video, index) => {
 
-                // EXTRACT VIDEO DATA
+                console.log("VIDEO OBJECT:", video)
+
+                // ============================================
+                // VIDEO DATA
+                // ============================================
                 const videoName =
                   typeof video === "object"
                     ? (video.video_name || "Unnamed Video")
@@ -213,53 +363,60 @@ function App() {
                     ? (video.status || "PENDING")
                     : "UNKNOWN"
 
-                // DIRECT VIDEO URL
+                // ============================================
+                // VIDEO URL
+                // TEMPORARY PUBLIC URL
+                // LATER WE WILL USE PRESIGNED GET URLS
+                // ============================================
                 const videoUrl =
-                  `https://akshay-video-upload-bucket-2026.s3.ap-south-1.amazonaws.com/${videoName}`
+                  `https://akshay-video-upload-bucket-2026.s3.ap-south-1.amazonaws.com/${video.video_key || video.video_name}`
 
                 return (
 
                   <div
                     key={index}
                     style={{
-                      padding: "14px",
                       backgroundColor: "#334155",
                       borderRadius: "12px",
+                      padding: "14px",
                     }}
                   >
 
-                    <video
-                    width="100%"
-                    height="180"
-                    style={{
-                      borderRadius: "10px",
-                      marginBottom: "12px",
-                      backgroundColor: "black",
-                      objectFit: "cover",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => setSelectedVideo(videoUrl)}
-                  >
+                    {/* ========================================= */}
+                    {/* THUMBNAIL PREVIEW */}
+                    {/* ========================================= */}
 
-                    <source
-                      src={videoUrl}
-                      type="video/mp4"
+                    <img
+                      src={video.thumbnail_url}
+                      alt="thumbnail"
+                      width="100%"
+                      height="180"
+                      style={{
+                        borderRadius: "10px",
+                        marginBottom: "12px",
+                        objectFit: "cover",
+                        cursor: "pointer",
+                        backgroundColor: "black",
+                      }}
+                      onClick={() => setSelectedVideo(videoUrl)}
                     />
 
-                  </video>
-
+                    {/* ========================================= */}
                     {/* VIDEO NAME */}
+                    {/* ========================================= */}
                     <h3
                       style={{
+                        fontSize: "16px",
                         marginBottom: "8px",
                         wordBreak: "break-word",
-                        fontSize: "16px",
                       }}
                     >
                       {videoName}
                     </h3>
 
-                    {/* VIDEO STATUS */}
+                    {/* ========================================= */}
+                    {/* STATUS */}
+                    {/* ========================================= */}
                     <p
                       style={{
                         color: "#94a3b8",
@@ -267,9 +424,11 @@ function App() {
                       }}
                     >
                       Status:{" "}
+
                       <span
                         style={{
                           fontWeight: "bold",
+
                           color:
                             videoStatus === "PROCESSED"
                               ? "#10b981"
@@ -278,7 +437,85 @@ function App() {
                       >
                         {videoStatus}
                       </span>
+
                     </p>
+
+                    <p
+                      style={{
+                        color: "#94a3b8",
+                        fontSize: "13px",
+                        marginTop: "6px",
+                      }}
+                    >
+                      Uploaded:
+                      {" "}
+                      {video.uploaded_at
+                        ? new Date(video.uploaded_at).toLocaleString()
+                        : "Unknown"}
+                    </p>
+                    <p
+                      style={{
+                        color: "#94a3b8",
+                        fontSize: "13px",
+                        marginTop: "4px",
+                      }}
+                    >
+                      Size:
+                      {" "}
+                      {video.video_size
+                        ? `${(video.video_size / (1024 * 1024)).toFixed(2)} MB`
+                        : "Unknown"}
+                    </p>
+
+                    <button
+                      style={{
+                        marginTop: "12px",
+                        backgroundColor: "#ef4444",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 14px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                      }}
+                      onClick={async () => {
+
+                        try {
+
+                          const response = await fetch(
+
+                            "http://localhost:5000/api/delete-video",
+
+                            {
+                              method: "DELETE",
+
+                              headers: {
+                                "Content-Type": "application/json",
+                              },
+
+                              body: JSON.stringify({
+
+                                video_key: video.video_key,
+
+                                thumbnail_url: video.thumbnail_url,
+                              }),
+                            }
+                          )
+
+                          const data = await response.json()
+
+                          console.log(data)
+
+                          fetchVideos()
+
+                        } catch (error) {
+
+                          console.log("DELETE ERROR:", error)
+                        }
+                      }}
+                    >
+                      🗑 Delete
+                    </button>
 
                   </div>
 
@@ -290,59 +527,61 @@ function App() {
 
           )}
 
-          {/* FULLSCREEN VIDEO MODAL */}
-{selectedVideo && (
-
-  <div
-    onClick={() => setSelectedVideo(null)}
-    style={{
-      position: "fixed",
-      top: 0,
-      left: 0,
-      width: "100%",
-      height: "100%",
-      backgroundColor: "rgba(0,0,0,0.9)",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      zIndex: 9999,
-      padding: "20px",
-    }}
-  >
-
-    <div
-      style={{
-        width: "90%",
-        maxWidth: "1200px",
-      }}
-    >
-
-      <video
-        width="100%"
-        controls
-        autoPlay
-        style={{
-          borderRadius: "12px",
-          backgroundColor: "black",
-        }}
-      >
-
-        <source
-          src={selectedVideo}
-          type="video/mp4"
-        />
-
-      </video>
-
-    </div>
-
-  </div>
-
-)}
-
         </div>
 
       </div>
+
+      {/* ========================================= */}
+      {/* FULLSCREEN VIDEO PLAYER */}
+      {/* ========================================= */}
+      {selectedVideo && (
+
+        <div
+          onClick={() => setSelectedVideo(null)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            backgroundColor: "rgba(0,0,0,0.92)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            padding: "20px",
+          }}
+        >
+
+          <div
+            style={{
+              width: "90%",
+              maxWidth: "1200px",
+            }}
+          >
+
+            <video
+              width="100%"
+              controls
+              autoPlay
+              style={{
+                borderRadius: "14px",
+                backgroundColor: "black",
+              }}
+            >
+
+              <source
+                src={selectedVideo}
+                type="video/mp4"
+              />
+
+            </video>
+
+          </div>
+
+        </div>
+
+      )}
 
     </div>
   )

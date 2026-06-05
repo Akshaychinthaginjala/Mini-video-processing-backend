@@ -154,7 +154,7 @@ function App() {
 
             video_size: file.size,
 
-            status: "UPLOADED",
+            status: "PROCESSING",
 
             uploaded_at: new Date().toISOString(),
           }),
@@ -400,6 +400,51 @@ function App() {
                       }}
                       onClick={() => setSelectedVideo(videoUrl)}
                     />
+                    <div style={{ marginBottom: "10px" }}>
+
+                      {videoStatus === "PROCESSING" && (
+                        <span
+                          style={{
+                            backgroundColor: "orange",
+                            color: "white",
+                            padding: "6px 12px",
+                            borderRadius: "20px",
+                            fontWeight: "bold"
+                          }}
+                        >
+                          PROCESSING
+                        </span>
+                      )}
+
+                      {videoStatus === "PROCESSED" && (
+                        <span
+                          style={{
+                            backgroundColor: "green",
+                            color: "white",
+                            padding: "6px 12px",
+                            borderRadius: "20px",
+                            fontWeight: "bold"
+                          }}
+                        >
+                          PROCESSED
+                        </span>
+                      )}
+
+                      {videoStatus === "FAILED" && (
+                        <span
+                          style={{
+                            backgroundColor: "red",
+                            color: "white",
+                            padding: "6px 12px",
+                            borderRadius: "20px",
+                            fontWeight: "bold"
+                          }}
+                        >
+                          FAILED
+                        </span>
+                      )}
+
+                    </div>
 
                     {/* ========================================= */}
                     {/* VIDEO NAME */}

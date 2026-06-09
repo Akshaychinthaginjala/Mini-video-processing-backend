@@ -1,0 +1,21 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+terraform-state-backup.json
+
+# Node
+**/node_modules/*
+
+# Python
+**/__pycache__/*
+*.pyc
+
+# Environment files
+.env
+
+# VS Code
+.vscode/
+
+# Lambda deployment packages
+*.zip

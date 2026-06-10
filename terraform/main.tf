@@ -190,3 +190,26 @@ resource "aws_s3_bucket_notification" "video_upload_notification" {
     filter_suffix = ".mp4"
   }
 }
+
+
+
+##cloudwatch alarm
+resource "aws_cloudwatch_metric_alarm" "dlq_messages_alarm" {
+
+  alarm_name          = "DLQ-Messages-Alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+
+  datapoints_to_alarm = 1
+
+  metric_name = "ApproximateNumberOfMessagesVisible"
+  namespace   = "AWS/SQS"
+  period      = 60
+  statistic   = "Average"
+
+  threshold = 1
+
+  dimensions = {
+    QueueName = aws_sqs_queue.video_processing_dlq.name
+  }
+}

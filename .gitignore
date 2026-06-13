@@ -19,3 +19,14 @@ terraform-state-backup.json
 
 # Lambda deployment packages
 *.zip
+
+# AWS
+.aws/
+
+# Secrets
+*.pem
+*.key
+
+# OS files
+.DS_Store
+Thumbs.db
